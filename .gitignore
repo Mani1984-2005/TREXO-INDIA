@@ -1,0 +1,58 @@
+.venv/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.pytest_cache/
+.env
+.env.*
+!.env.example
+data/raw/*
+data/processed/*
+data/external/*
+models/*
+reports/generated/*
+
+# ==========================================
+# TREXO-INDIA PUBLIC REPOSITORY PROTECTION
+# ==========================================
+
+# All raw, processed and derived datasets
+/data/
+
+# Trained model binaries and local model artifacts
+/models/
+
+# Local backups
+/backups/
+
+# Python temporary files
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Environment and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+credentials/
+
+# Model and serialized binary files
+*.joblib
+*.pkl
+*.pickle
+
+# Logs and temporary outputs
+*.log
+*.tmp
+*.bak
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Reports are excluded until individually reviewed
+/reports/
+
