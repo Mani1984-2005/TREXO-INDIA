@@ -1,28 +1,25 @@
 /**
- * TEMPORARY PROTOTYPE AUTHENTICATION MODULE
+ * Owner authentication.
  *
- * SECURITY NOTICE:
- * - This module provides a temporary frontend-only prototype login gate for local demo use.
- * - Frontend-only password checks DO NOT provide genuine security and MUST be replaced
- *   before any production deployment.
- * - Do NOT hardcode real production credentials in client-side code.
+ * Two modes, selected by ``VITE_USE_MOCK``:
  *
- * PLANNED PRODUCTION ARCHITECTURE:
- * - Server-side password verification endpoint over HTTPS
- * - Password hashing with Argon2id or bcrypt on the backend
- * - Secure, HttpOnly, SameSite session cookies with expiration
- * - Login rate limiting and brute-force lockout protection
- * - Server-side route & API authorization checks and explicit server logout
+ * - Mock mode (default) keeps the original client-side prototype gate for
+ *   offline demos.  It is explicit that it is not real security.
+ * - API mode (``VITE_USE_MOCK=false``) posts the passcode to the FastAPI
+ *   backend and stores the returned HMAC bearer token in sessionStorage.  The
+ *   passcode itself is never stored in the browser.
  */
+import { API_BASE_URL, USE_MOCK } from '../config';
+import { ApiClientError, getToken, setToken } from './apiClient';
 
 const SESSION_KEY = 'trexo_owner_session_v1';
 
-// TEMPORARY DEVELOPMENT PASSWORD — MUST BE REPLACED WITH BACKEND AUTH BEFORE DEPLOYMENT
+// TEMPORARY PROTOTYPE PASSWORD — only used when VITE_USE_MOCK is not "false".
 const DEV_PROTOTYPE_PASSCODE = '123456789';
 
 export interface AuthResult {
   ok: boolean;
-  errorCode?: 'empty' | 'invalid';
+  errorCode?: 'empty' | 'invalid' | 'network';
 }
 
 function getStorage(): Storage | null {
@@ -36,11 +33,32 @@ function getStorage(): Storage | null {
   return null;
 }
 
+/** Read the ``exp`` claim without verifying it (the server is authoritative). */
+function tokenIsFresh(token: string): boolean {
+  try {
+    const body = token.split('.', 1)[0];
+    const padded = body.replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(atob(padded + '='.repeat((4 - (padded.length % 4)) % 4))) as {
+      exp?: number;
+    };
+    return typeof payload.exp === 'number' ? payload.exp * 1000 > Date.now() : true;
+  } catch {
+    return false;
+  }
+}
+
 export const authService = {
   isAuthenticated(): boolean {
-    const storage = getStorage();
-    if (!storage) return false;
-    return storage.getItem(SESSION_KEY) === 'authenticated';
+    if (USE_MOCK) {
+      const storage = getStorage();
+      return storage?.getItem(SESSION_KEY) === 'authenticated';
+    }
+    const token = getToken();
+    if (!token || !tokenIsFresh(token)) {
+      setToken(null);
+      return false;
+    }
+    return true;
   },
 
   async verifyOwnerPassword(password: string, delayMs = 280): Promise<AuthResult> {
@@ -49,25 +67,42 @@ export const authService = {
       return { ok: false, errorCode: 'empty' };
     }
 
-    if (delayMs > 0) {
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-    }
-
-    if (password === DEV_PROTOTYPE_PASSCODE) {
-      const storage = getStorage();
-      if (storage) {
-        storage.setItem(SESSION_KEY, 'authenticated');
+    if (USE_MOCK) {
+      if (delayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
-      return { ok: true };
+      if (password === DEV_PROTOTYPE_PASSCODE) {
+        getStorage()?.setItem(SESSION_KEY, 'authenticated');
+        return { ok: true };
+      }
+      return { ok: false, errorCode: 'invalid' };
     }
 
-    return { ok: false, errorCode: 'invalid' };
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+      if (!response.ok) {
+        return { ok: false, errorCode: response.status === 401 ? 'invalid' : 'network' };
+      }
+      const body = (await response.json()) as { token: string };
+      setToken(body.token);
+      return { ok: true };
+    } catch (error) {
+      if (error instanceof ApiClientError) {
+        return { ok: false, errorCode: 'network' };
+      }
+      return { ok: false, errorCode: 'network' };
+    }
   },
 
   logout(): void {
-    const storage = getStorage();
-    if (storage) {
-      storage.removeItem(SESSION_KEY);
+    if (USE_MOCK) {
+      getStorage()?.removeItem(SESSION_KEY);
+      return;
     }
+    setToken(null);
   },
 };

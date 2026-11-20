@@ -2,6 +2,12 @@ export const DEADSTOCK_DAYS = 30;
 export const NEAR_EXPIRY_DAYS = 14;
 export const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false';
 
+/** Base URL of the FastAPI backend (no trailing slash). */
+export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api/v1').replace(
+  /\/+$/,
+  ''
+);
+
 export const STORE_INFO = {
   shopName: 'Shree Lakshmi Kirana & General Store',
   ownerName: 'Mahesh Kulkarni',

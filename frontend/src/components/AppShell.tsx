@@ -2,6 +2,7 @@ import {
   ArrowUpRight,
   BarChart3,
   BookOpen,
+  Brain,
   CheckCircle2,
   ChevronDown,
   Coins,
@@ -229,6 +230,13 @@ export function AppShell({ children }: AppShellProps) {
           count: null,
           tone: 'neutral',
         },
+        {
+          to: '/intelligence',
+          label: 'ML Intelligence',
+          icon: Brain,
+          count: null,
+          tone: 'neutral',
+        },
       ],
     },
   ];
@@ -241,6 +249,7 @@ export function AppShell({ children }: AppShellProps) {
     '/restock': t.navRestock,
     '/customers': t.navUdhaar,
     '/reports': t.navReports,
+    '/intelligence': 'ML Intelligence',
   };
   const currentTitle = routeTitles[location.pathname] ?? t.navDashboard;
   const isOnCounter = location.pathname === '/counter';

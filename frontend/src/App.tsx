@@ -6,6 +6,7 @@ import { CustomersPage } from './pages/CustomersPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { InventoryPage } from './pages/InventoryPage';
 import { LandingLoginPage } from './pages/LandingLoginPage';
+import { MlIntelligencePage } from './pages/MlIntelligencePage';
 import { ReportsPage } from './pages/ReportsPage';
 import { RescueCashPage } from './pages/RescueCashPage';
 import { RestockPage } from './pages/RestockPage';
@@ -60,6 +61,7 @@ function AppRoutes() {
           <Route path="/restock" element={<RestockPage />} />
           <Route path="/customers" element={<CustomersPage />} />
           <Route path="/reports" element={<ReportsPage />} />
+          <Route path="/intelligence" element={<MlIntelligencePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       )}
