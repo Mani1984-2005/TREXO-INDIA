@@ -1,0 +1,6 @@
+{
+  "name": "Smart Digital Munim",
+  "description": "Billing, stock rescue, and restock assistant for Indian kirana owners. Works with unreliable connectivity with data saved on this device.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

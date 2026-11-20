@@ -1,0 +1,183 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", "Noto Sans Devanagari", "Noto Sans Kannada", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* TREXO V2 — Premium Indian Retail OS Palette */
+  --color-trexo-deep: #103D2B;
+  --color-trexo-emerald: #145C3A;
+  --color-trexo-green: #237A50;
+  --color-trexo-cream: #FAF7EF;
+  --color-trexo-canvas: #F3F5F2;
+  --color-trexo-gold: #C6A15B;
+  --color-trexo-ink: #172B22;
+  --color-trexo-muted: #718078;
+  --color-trexo-border: #E5EAE5;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    background-color: #F3F5F2;
+    color: #172B22;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background-color: #F3F5F2;
+    color: #172B22;
+    overflow-x: clip;
+  }
+
+  button:not(:disabled),
+  a[href] {
+    cursor: pointer;
+  }
+
+  :focus-visible {
+    outline: 2px solid #145C3A;
+    outline-offset: 2px;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Subtle single-elevation surfaces */
+.trexo-surface {
+  background-color: #FFFFFF;
+  border: 1px solid #E5EAE5;
+  box-shadow: 0 1px 2px rgba(16, 61, 43, 0.04);
+}
+
+.trexo-surface-warm {
+  background-color: #FAF7EF;
+  border: 1px solid #E4DCC6;
+  box-shadow: 0 1px 2px rgba(16, 61, 43, 0.03);
+}
+
+/* Fast compositor-only micro-interactions (<= 200ms) */
+@keyframes trexoFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes trexoModalIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes trexoDrawerIn {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes trexoSidebarIn {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.trexo-fade-in {
+  animation: trexoFadeIn 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.trexo-modal-in {
+  animation: trexoModalIn 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.trexo-drawer-in {
+  animation: trexoDrawerIn 190ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.trexo-sidebar-in {
+  animation: trexoSidebarIn 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Subtle custom scrollbars for POS cart and dense tables */
+.trexo-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #CBD5CE transparent;
+}
+
+.trexo-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.trexo-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.trexo-scroll::-webkit-scrollbar-thumb {
+  background-color: #CBD5CE;
+  border-radius: 999px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Print stylesheet for A5 customer receipts, payment receipts, and A4 supplier return slips */
+@media print {
+  @page {
+    margin: 12mm;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  .print-surface {
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+}
