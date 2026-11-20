@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+import threading
 
 
 def test_products_shape(products):
@@ -69,15 +70,188 @@ def test_sale_flow_updates_stock_and_customer(client, auth, products):
     assert dup.json()["error"]["code"] == "DUPLICATE_UPI_REF"
 
 
-def test_sale_clamps_to_available_stock(client, auth):
+def test_sale_rejects_quantity_over_available_stock(client, auth):
     product = next(p for p in client.get("/api/v1/store/products", headers=auth).json() if p["stockQty"] > 0)
     resp = client.post(
         "/api/v1/store/sales",
         json={"items": [{"productId": product["id"], "qty": 999}], "paymentMethod": "cash"},
         headers=auth,
     )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "INSUFFICIENT_STOCK"
+    unchanged = next(p for p in client.get("/api/v1/store/products", headers=auth).json() if p["id"] == product["id"])
+    assert unchanged["stockQty"] == product["stockQty"]
+
+
+def test_repeated_product_lines_aggregate_without_overselling(client, auth):
+    product = next(p for p in client.get("/api/v1/store/products", headers=auth).json() if p["stockQty"] >= 14)
+    resp = client.post(
+        "/api/v1/store/sales",
+        json={
+            "items": [
+                {"productId": product["id"], "qty": 3},
+                {"productId": product["id"], "qty": 4},
+            ],
+            "paymentMethod": "cash",
+        },
+        headers=auth,
+    )
     assert resp.status_code == 201
-    assert resp.json()["items"][0]["qty"] == product["stockQty"]
+    assert sum(item["qty"] for item in resp.json()["items"]) == 7
+    unchanged = next(p for p in client.get("/api/v1/store/products", headers=auth).json() if p["id"] == product["id"])
+    assert unchanged["stockQty"] == product["stockQty"] - 7
+
+
+def test_repeated_product_lines_reject_when_aggregate_exceeds_stock(client, auth):
+    product = next(p for p in client.get("/api/v1/store/products", headers=auth).json() if 0 < p["stockQty"] < 20)
+    qty = product["stockQty"]
+    resp = client.post(
+        "/api/v1/store/sales",
+        json={
+            "items": [
+                {"productId": product["id"], "qty": max(1, qty - 1)},
+                {"productId": product["id"], "qty": 2},
+            ],
+            "paymentMethod": "cash",
+        },
+        headers=auth,
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "INSUFFICIENT_STOCK"
+    unchanged = next(p for p in client.get("/api/v1/store/products", headers=auth).json() if p["id"] == product["id"])
+    assert unchanged["stockQty"] == product["stockQty"]
+
+
+def test_concurrent_sales_preserve_stock_invoice_and_upi(client, auth):
+    product = next(p for p in client.get("/api/v1/store/products", headers=auth).json() if p["stockQty"] >= 20)
+    pid = product["id"]
+    before = product["stockQty"]
+    ref = f"CONCURRENT-{uuid.uuid4().hex}"
+
+    def submit(i):
+        return client.post(
+            "/api/v1/store/sales",
+            json={
+                "items": [{"productId": pid, "qty": 1}],
+                "paymentMethod": "upi",
+                "upiTransactionRef": ref if i == 0 else f"{ref}-{i}",
+            },
+            headers=auth,
+        )
+
+    threads = [threading.Thread(target=lambda i=i: submit(i)) for i in range(20)]
+    results = [None] * len(threads)
+    def run(i):
+        results[i] = submit(i)
+    threads = [threading.Thread(target=run, args=(i,)) for i in range(20)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    statuses = [response.status_code for response in results]
+    assert statuses.count(201) == 20
+    invoices = [response.json()["invoiceNo"] for response in results]
+    assert len(set(invoices)) == 20
+    updated = next(p for p in client.get("/api/v1/store/products", headers=auth).json() if p["id"] == pid)
+    assert updated["stockQty"] == before - 20
+
+
+def test_concurrent_duplicate_upi_reference_is_rejected(client, auth):
+    product = next(p for p in client.get("/api/v1/store/products", headers=auth).json() if p["stockQty"] >= 8)
+    pid = product["id"]
+    ref = f"DUP-{uuid.uuid4().hex}"
+    results = [None] * 8
+    def run(i):
+        results[i] = client.post(
+            "/api/v1/store/sales",
+            json={
+                "items": [{"productId": pid, "qty": 1}],
+                "paymentMethod": "upi",
+                "upiTransactionRef": ref,
+            },
+            headers=auth,
+        )
+    threads = [threading.Thread(target=run, args=(i,)) for i in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert sum(response.status_code == 201 for response in results) == 1
+    assert sum(response.status_code == 409 for response in results) == 7
+
+
+def test_reset_requires_authentication_and_admin(client):
+    unauthenticated = client.post(
+        "/api/v1/store/reports/reset-demo",
+        json={"confirmation": "RESET-DEMO"},
+    )
+    assert unauthenticated.status_code == 401
+
+    owner_login = client.post(
+        "/api/v1/auth/login",
+        json={"password": "phase-b-test-owner"},
+    )
+    assert owner_login.status_code == 200
+    owner = {"Authorization": f"Bearer {owner_login.json()['token']}"}
+
+    owner_only = client.post(
+        "/api/v1/store/reports/reset-demo",
+        json={"confirmation": "RESET-DEMO"},
+        headers=owner,
+    )
+    assert owner_only.status_code == 403
+
+    wrong_admin = client.post(
+        "/api/v1/store/reports/reset-demo",
+        json={"confirmation": "RESET-DEMO"},
+        headers={**owner, "X-Admin-Token": "wrong-admin"},
+    )
+    assert wrong_admin.status_code == 403
+
+
+def test_reset_requires_confirmation_and_audit_logged(client):
+    owner_login = client.post(
+        "/api/v1/auth/login",
+        json={"password": "phase-b-test-owner"},
+    )
+    owner = {"Authorization": f"Bearer {owner_login.json()['token']}"}
+    headers = {**owner, "X-Admin-Token": "phase-b-test-admin"}
+
+    missing_confirmation = client.post(
+        "/api/v1/store/reports/reset-demo",
+        json={"confirmation": "wrong"},
+        headers=headers,
+    )
+    assert missing_confirmation.status_code == 400
+    assert missing_confirmation.json()["error"]["code"] == "RESET_CONFIRMATION_REQUIRED"
+
+    reset = client.post(
+        "/api/v1/store/reports/reset-demo",
+        json={"confirmation": "RESET-DEMO"},
+        headers=headers,
+    )
+    assert reset.status_code == 200
+
+
+def test_database_transaction_rolls_back_partial_mutation(client):
+    db = client.app.state.db
+    marker_id = "tx-roll-back-marker"
+    try:
+        with db.transaction() as conn:
+            conn.execute(
+                "INSERT INTO products(id, created_at, data) VALUES (?,?,?)",
+                (marker_id, "2026-11-20T00:00:00Z", "{}"),
+            )
+            raise RuntimeError("intentional rollback probe")
+    except RuntimeError:
+        pass
+
+    with db.connection() as conn:
+        marker = conn.execute(
+            "SELECT id FROM products WHERE id = ?", (marker_id,)
+        ).fetchone()
+    assert marker is None
 
 
 def test_sale_validation_errors(client, auth):

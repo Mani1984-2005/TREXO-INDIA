@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+
 
 def test_livez(client):
     assert client.get("/livez").status_code == 200
@@ -29,8 +32,63 @@ def test_auth_rejects_bad_token(client):
     assert resp.json()["error"]["code"] in {"INVALID_TOKEN", "AUTH_REQUIRED"}
 
 
+def test_auth_rejects_expired_token(client):
+    from trexo_api.security import create_token
+
+    token = create_token("owner", ttl=-1)
+    response = client.get(
+        "/api/v1/store/products", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "TOKEN_EXPIRED"
+
+
 def test_login_wrong_password(client):
     resp = client.post("/api/v1/auth/login", json={"password": "wrong"})
+    assert resp.status_code == 401
+
+
+def test_login_returns_usable_bearer_token(client):
+    response = client.post(
+        "/api/v1/auth/login", json={"password": "phase-b-test-owner"}
+    )
+    assert response.status_code == 200
+    result = response.json()
+    assert result["tokenType"] == "bearer"
+    assert result["expiresIn"] > 0
+    assert result["token"]
+
+    protected = client.get(
+        "/api/v1/store/products",
+        headers={"Authorization": f"Bearer {result['token']}"},
+    )
+    assert protected.status_code == 200
+
+
+def test_login_accepts_configured_pbkdf2_hash(client, monkeypatch):
+    from trexo_api import security
+
+    password = "hash-path-test-only"
+    salt = b"phase-b-auth-test-salt"
+    iterations = 10_000
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations)
+    encode = lambda value: base64.urlsafe_b64encode(value).decode().rstrip("=")
+    passcode_hash = f"pbkdf2_sha256${iterations}${encode(salt)}${encode(digest)}"
+    monkeypatch.setattr(security, "OWNER_PASSCODE_HASH", passcode_hash)
+    monkeypatch.setattr(security, "OWNER_PASSCODE", None)
+
+    response = client.post("/api/v1/auth/login", json={"password": password})
+    assert response.status_code == 200
+    assert response.json()["tokenType"] == "bearer"
+
+    wrong = client.post(
+        "/api/v1/auth/login", json={"password": "not-the-test-password"}
+    )
+    assert wrong.status_code == 401
+
+
+def test_removed_universal_password_is_not_accepted(client):
+    resp = client.post("/api/v1/auth/login", json={"password": "123456789"})
     assert resp.status_code == 401
 
 

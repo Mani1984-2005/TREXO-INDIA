@@ -15,9 +15,10 @@ BACKEND_DIR = REPO_ROOT / "backend"
 DATA_DIR = Path(os.environ.get("TREXO_DATA_DIR", BACKEND_DIR / "data"))
 DB_PATH = Path(os.environ.get("TREXO_DB_PATH", DATA_DIR / "trexo.db"))
 
-# Owner passcode.  The prototype frontend used a client-side constant; the
-# authoritative check now lives here.  Override with TREXO_OWNER_PASSCODE.
-OWNER_PASSCODE = os.environ.get("TREXO_OWNER_PASSCODE", "123456789")
+# Owner passcode.  No universal default is provided.  Production must set
+# TREXO_OWNER_PASSCODE or, preferably, TREXO_OWNER_PASSCODE_HASH.
+OWNER_PASSCODE = os.environ.get("TREXO_OWNER_PASSCODE")
+OWNER_PASSCODE_HASH = os.environ.get("TREXO_OWNER_PASSCODE_HASH")
 TOKEN_TTL_SECONDS = int(os.environ.get("TREXO_TOKEN_TTL_SECONDS", 60 * 60 * 12))
 
 # Comma-separated list of allowed browser origins.

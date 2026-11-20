@@ -330,6 +330,10 @@ class Ack(CamelModel):
     message: str | None = None
 
 
+class ResetDemoInput(CamelModel):
+    confirmation: str = Field(min_length=1, max_length=100)
+
+
 class SetDiscountInput(CamelModel):
     price_paise: Optional[int] = Field(default=None, ge=0)
 

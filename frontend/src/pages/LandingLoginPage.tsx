@@ -68,6 +68,8 @@ export function LandingLoginPage() {
         navigate(fromPath, { replace: true });
       } else if (result.errorCode === 'empty') {
         setErrorMsg(t.loginEmptyError);
+      } else if (result.errorCode === 'network') {
+        setErrorMsg(t.loginNetworkError);
       } else {
         setErrorMsg(t.loginInvalidError);
       }

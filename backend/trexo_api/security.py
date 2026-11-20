@@ -11,11 +11,20 @@ import hashlib
 import hmac
 import json
 import time
+import logging
 from typing import Any
 
 from fastapi import Header, HTTPException, status
 
-from .config import ADMIN_TOKEN, AUTH_SECRET, OWNER_PASSCODE, TOKEN_TTL_SECONDS
+from .config import (
+    ADMIN_TOKEN,
+    AUTH_SECRET,
+    OWNER_PASSCODE,
+    OWNER_PASSCODE_HASH,
+    TOKEN_TTL_SECONDS,
+)
+
+logger = logging.getLogger("trexo.api.security")
 
 
 class ApiError(Exception):
@@ -66,6 +75,22 @@ def verify_token(token: str) -> dict:
 
 
 def check_passcode(password: str) -> bool:
+    if OWNER_PASSCODE_HASH:
+        try:
+            algorithm, iterations_text, salt_text, digest_text = OWNER_PASSCODE_HASH.split("$", 3)
+            if algorithm != "pbkdf2_sha256":
+                return False
+            iterations = int(iterations_text)
+            salt = base64.urlsafe_b64decode(salt_text + "=" * (-len(salt_text) % 4))
+            candidate = hashlib.pbkdf2_hmac(
+                "sha256", password.encode("utf-8"), salt, iterations
+            )
+            expected = base64.urlsafe_b64decode(digest_text + "=" * (-len(digest_text) % 4))
+            return hmac.compare_digest(candidate, expected)
+        except (TypeError, ValueError):
+            return False
+    if not OWNER_PASSCODE:
+        return False
     return hmac.compare_digest(password.encode(), OWNER_PASSCODE.encode())
 
 
@@ -89,11 +114,13 @@ async def require_auth(authorization: str | None = Header(default=None)) -> dict
 async def require_admin(x_admin_token: str | None = Header(default=None)) -> None:
     """Model-management guard.  Disabled entirely when no admin token is set."""
     if not ADMIN_TOKEN:
+        logger.warning("Administrative operation rejected: admin credential is not configured")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={"code": "ADMIN_DISABLED", "message": "Model management is disabled: set TREXO_ADMIN_TOKEN"},
         )
     if not x_admin_token or not hmac.compare_digest(x_admin_token, ADMIN_TOKEN):
+        logger.warning("Administrative operation rejected: invalid or missing admin credential")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"code": "ADMIN_FORBIDDEN", "message": "Valid X-Admin-Token required"},

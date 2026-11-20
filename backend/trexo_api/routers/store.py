@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query, status
@@ -22,6 +23,7 @@ from ..schemas.domain import (
     ProductPatch,
     PurchaseOrder,
     PurchaseOrderCreateItem,
+    ResetDemoInput,
     ReturnToSupplierInput,
     Sale,
     SalesSummary,
@@ -31,10 +33,12 @@ from ..schemas.domain import (
     SupplierReturnItem,
     SupplierReturnResult,
 )
-from ..security import require_auth
-from ..store.service import StoreService
+from ..security import require_admin, require_auth
+from ..store.service import StoreError, StoreService
 
 router = APIRouter(prefix="/store", tags=["store"], dependencies=[Depends(require_auth)])
+
+logger = logging.getLogger("trexo.api.reset")
 
 
 # ---------------------------------------------------------------- products
@@ -174,9 +178,20 @@ def sales_summary(store: StoreService = Depends(get_store)):
     return store.sales_summary()
 
 
-@router.post("/reports/reset-demo", response_model=Ack)
-def reset_demo(store: StoreService = Depends(get_store)):
+@router.post(
+    "/reports/reset-demo",
+    response_model=Ack,
+    dependencies=[Depends(require_admin)],
+)
+def reset_demo(
+    payload: ResetDemoInput,
+    store: StoreService = Depends(get_store),
+):
+    if payload.confirmation != "RESET-DEMO":
+        logger.warning("Demo reset rejected: invalid confirmation")
+        raise StoreError("RESET_CONFIRMATION_REQUIRED", "Explicit RESET-DEMO confirmation is required.", 400)
     store.reset_demo_data()
+    logger.warning("Demo reset completed")
     return {"status": "OK", "message": "Demo data reset"}
 
 

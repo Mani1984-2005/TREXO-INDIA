@@ -14,9 +14,6 @@ import { ApiClientError, getToken, setToken } from './apiClient';
 
 const SESSION_KEY = 'trexo_owner_session_v1';
 
-// TEMPORARY PROTOTYPE PASSWORD — only used when VITE_USE_MOCK is not "false".
-const DEV_PROTOTYPE_PASSCODE = '123456789';
-
 export interface AuthResult {
   ok: boolean;
   errorCode?: 'empty' | 'invalid' | 'network';
@@ -70,10 +67,6 @@ export const authService = {
     if (USE_MOCK) {
       if (delayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, delayMs));
-      }
-      if (password === DEV_PROTOTYPE_PASSCODE) {
-        getStorage()?.setItem(SESSION_KEY, 'authenticated');
-        return { ok: true };
       }
       return { ok: false, errorCode: 'invalid' };
     }

@@ -100,7 +100,7 @@ The UI never computes authoritative business rules in API mode: sale totals, sto
 |---|---|
 | Login | `POST /api/v1/auth/login` with the owner passcode; returns an HMAC-signed bearer token |
 | Secret | `TREXO_AUTH_SECRET` env var, else generated once into `backend/data/.auth_secret` (git-ignored, chmod 600 where possible) |
-| Passcode | `TREXO_OWNER_PASSCODE`, default `123456789` for local demo |
+| Passcode | `TREXO_OWNER_PASSCODE_HASH` (PBKDF2-SHA256, preferred); no default credential |
 | TTL | `TREXO_TOKEN_TTL_SECONDS`, default 12 h |
 | Admin | Model activation requires `X-Admin-Token` equal to `TREXO_ADMIN_TOKEN`; if unset the endpoint returns 503 `ADMIN_DISABLED` |
 | CORS | `TREXO_CORS_ORIGINS`, comma-separated, no credentials |

@@ -141,7 +141,7 @@ export function createApiServices(): TrexoServices {
     reports: {
       getSalesSummary: () => api.get<SalesSummary>('/store/reports/sales-summary'),
       resetDemoData: async () => {
-        await api.post('/store/reports/reset-demo');
+        await api.post('/store/reports/reset-demo', { confirmation: 'RESET-DEMO' });
       },
     },
   };

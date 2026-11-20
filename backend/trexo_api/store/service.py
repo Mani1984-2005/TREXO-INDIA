@@ -251,31 +251,68 @@ class StoreService:
         return self.db.all("sales")
 
     def complete_sale(self, payload: dict) -> dict:
-        products = {p["id"]: p for p in self.db.all("products")}
         now = _now()
         now_iso = _iso(now)
         items: list[dict] = []
-        pending_updates: list[dict] = []
         subtotal = total = rescued = 0
+        aggregated: dict[str, int] = {}
         for line in payload["items"]:
-            product = products.get(line["productId"])
-            if product is None:
-                raise StoreError("PRODUCT_NOT_FOUND", f"Product {line['productId']} not found", 404)
-            if product["stockQty"] <= 0:
-                raise StoreError("OUT_OF_STOCK", f"{product['name']} is out of stock.")
-            qty = max(1, int(round(line["qty"])))
-            qty = min(qty, int(product["stockQty"]))
-            eff = effective_price(product)
-            orig = int(product["sellingPricePaise"])
-            line_total = eff * qty
-            subtotal += orig * qty
-            total += line_total
-            dead = is_dead_stock(product, now) or is_near_expiry(product, now)
-            if dead:
-                rescued += line_total
-            items.append(
-                {
-                    "productId": product["id"],
+            pid = line["productId"]
+            qty = int(round(line["qty"]))
+            if qty < 1:
+                raise StoreError("INVALID_QUANTITY", "Sale quantity must be at least 1.")
+            aggregated[pid] = aggregated.get(pid, 0) + qty
+
+        if not aggregated:
+            raise StoreError("EMPTY_SALE", "Cannot complete empty sale")
+
+        with self.db.transaction() as conn:
+            products: dict[str, dict] = {}
+            for pid, qty in aggregated.items():
+                row = conn.execute("SELECT data FROM products WHERE id = ?", (pid,)).fetchone()
+                if row is None:
+                    raise StoreError("PRODUCT_NOT_FOUND", f"Product {pid} not found", 404)
+                product = json.loads(row["data"])
+                stock = int(product["stockQty"])
+                if stock <= 0:
+                    raise StoreError("OUT_OF_STOCK", f"{product['name']} is out of stock.")
+                if qty > stock:
+                    raise StoreError("INSUFFICIENT_STOCK", f"Only {stock} unit(s) available for {product['name']}.")
+                products[pid] = product
+
+            customer_id = payload.get("customerId")
+            customer_name = "Walk-in Customer"
+            customer_update: dict | None = None
+            if payload["paymentMethod"] == "udhaar":
+                if not customer_id:
+                    raise StoreError("CUSTOMER_REQUIRED", "Select a valid customer account for Udhaar billing.")
+                row = conn.execute("SELECT data FROM customers WHERE id = ?", (customer_id,)).fetchone()
+                if row is None:
+                    raise StoreError("CUSTOMER_NOT_FOUND", "Select a valid customer account for Udhaar billing.", 404)
+                customer = json.loads(row["data"])
+                customer_name = customer["name"]
+
+            upi_ref = payload.get("upiTransactionRef")
+            row = conn.execute("SELECT value FROM meta WHERE key = 'confirmed_refs'").fetchone()
+            try:
+                confirmed = json.loads(row["value"]) if row else []
+            except json.JSONDecodeError:
+                confirmed = []
+            if upi_ref and upi_ref in confirmed:
+                raise StoreError("DUPLICATE_UPI_REF", "This UPI transaction reference has already been confirmed.", 409)
+
+            for pid, qty in aggregated.items():
+                product = products[pid]
+                eff = effective_price(product)
+                orig = int(product["sellingPricePaise"])
+                line_total = eff * qty
+                subtotal += orig * qty
+                total += line_total
+                dead = is_dead_stock(product, now) or is_near_expiry(product, now)
+                if dead:
+                    rescued += line_total
+                items.append({
+                    "productId": pid,
                     "sku": product["sku"],
                     "name": product["name"],
                     "unit": product["unit"],
@@ -285,86 +322,92 @@ class StoreService:
                     "costPaise": int(product["costPaise"]),
                     "isDeadStockRescued": dead,
                     "lineTotalPaise": line_total,
-                }
+                })
+
+            if payload["paymentMethod"] == "udhaar":
+                customer["duePaise"] = int(customer["duePaise"]) + total
+                customer["lastTransactionAt"] = now_iso
+                customer_update = customer
+
+            elif customer_id:
+                row = conn.execute("SELECT data FROM customers WHERE id = ?", (customer_id,)).fetchone()
+                if row:
+                    customer_name = json.loads(row["data"])["name"]
+                else:
+                    customer_id = None
+
+            row = conn.execute("SELECT value FROM meta WHERE key = 'invoice_seq'").fetchone()
+            seq = int(row["value"]) if row else 1000
+            invoice_no = f"TRX-{seq}"
+
+            for pid, qty in aggregated.items():
+                product = products[pid]
+                stock = int(product["stockQty"])
+                remaining = stock - qty
+                if remaining < 0:
+                    raise StoreError("INSUFFICIENT_STOCK", f"Insufficient stock for {product['name']}.")
+                product["stockQty"] = remaining
+                if float(product["avgDailySales"]) <= 0:
+                    product["avgDailySales"] = round(max(0.2, qty / 7), 2)
+                product["lastSoldAt"] = now_iso
+                if remaining == 0:
+                    product["counterDiscountPricePaise"] = None
+                eff = effective_price(product)
+                conn.execute(
+                    "INSERT INTO products(id, created_at, data) VALUES (?,?,?) "
+                    "ON CONFLICT(id) DO UPDATE SET data=excluded.data",
+                    (pid, product.get("lastSoldAt") or now_iso,
+                     json.dumps(product, separators=(",", ":"))),
+                )
+                conn.execute(
+                    "INSERT INTO ml_sales_history(product_id, sale_date, quantity, unit_price, invoice_no) "
+                    "VALUES (?,?,?,?,?)",
+                    (pid, now.date().isoformat(), float(qty), eff / 100.0, invoice_no),
+                )
+
+            if customer_update is not None:
+                conn.execute(
+                    "INSERT INTO customers(id, created_at, data) VALUES (?,?,?) "
+                    "ON CONFLICT(id) DO UPDATE SET data=excluded.data",
+                    (customer_id, now_iso, json.dumps(customer_update, separators=(",", ":"))),
+                )
+
+            sale_id = f"sale-{uuid.uuid4().hex[:12]}"
+            sale = {
+                "id": sale_id,
+                "invoiceNo": invoice_no,
+                "createdAt": now_iso,
+                "items": items,
+                "subtotalPaise": subtotal,
+                "discountSavedPaise": max(0, subtotal - total),
+                "totalPaise": total,
+                "paymentMethod": payload["paymentMethod"],
+                "customerId": customer_id,
+                "customerName": customer_name,
+                "rescuedDeadStockPaise": rescued,
+                "upiTransactionRef": upi_ref,
+                "upiUtrNumber": (payload.get("upiUtrNumber") or "").strip() or None,
+                "upiIdUsed": (payload.get("upiIdUsed") or "").strip() or None,
+                "paymentStatus": payload.get("paymentStatus") or "confirmed",
+                "isDemoPayment": payload.get("isDemoPayment", payload["paymentMethod"] == "upi"),
+            }
+            conn.execute(
+                "INSERT INTO sales(id, created_at, data) VALUES (?,?,?)",
+                (sale_id, now_iso, json.dumps(sale, separators=(",", ":"))),
             )
-            remaining = max(0, int(product["stockQty"]) - qty)
-            pending_updates.append(
-                {
-                    "product": product,
-                    "remaining": remaining,
-                    "qty": qty,
-                    "price": eff,
-                    "clear_discount": remaining == 0,
-                }
+            conn.execute(
+                "INSERT INTO meta(key, value) VALUES ('invoice_seq', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (str(seq + 1),),
             )
-
-        if not items:
-            raise StoreError("EMPTY_SALE", "Cannot complete empty sale")
-
-        customer_id = payload.get("customerId")
-        customer_name = "Walk-in Customer"
-        customer_update: dict | None = None
-        if payload["paymentMethod"] == "udhaar":
-            if not customer_id:
-                raise StoreError("CUSTOMER_REQUIRED", "Select a valid customer account for Udhaar billing.")
-            customer = self.db.get("customers", customer_id)
-            if customer is None:
-                raise StoreError("CUSTOMER_NOT_FOUND", "Select a valid customer account for Udhaar billing.", 404)
-            customer["duePaise"] = int(customer["duePaise"]) + total
-            customer["lastTransactionAt"] = now_iso
-            customer_update = customer
-            customer_name = customer["name"]
-        elif customer_id:
-            customer = self.db.get("customers", customer_id)
-            if customer:
-                customer_name = customer["name"]
-            else:
-                customer_id = None
-
-        upi_ref = payload.get("upiTransactionRef")
-        confirmed = self._confirmed_refs()
-        if upi_ref and upi_ref in confirmed:
-            raise StoreError("DUPLICATE_UPI_REF", "This UPI transaction reference has already been confirmed.", 409)
-
-        # ---- all validation passed: apply mutations atomically -----------
-        for update in pending_updates:
-            product = update["product"]
-            product["stockQty"] = update["remaining"]
-            if float(product["avgDailySales"]) <= 0:
-                product["avgDailySales"] = round(max(0.2, update["qty"] / 7), 2)
-            product["lastSoldAt"] = now_iso
-            if update["clear_discount"]:
-                product["counterDiscountPricePaise"] = None
-            self.db.put("products", product["id"], product, now_iso)
-            self._add_history(product, update["qty"], update["price"] / 100.0, now)
-        if customer_update is not None:
-            self.db.put("customers", customer_id, customer_update, now_iso)
-        if upi_ref:
-            confirmed.append(upi_ref)
-            self.db.set_meta("confirmed_refs", json.dumps(confirmed))
-
-        seq = int(self.db.get_meta("invoice_seq", "1000"))
-        sale = {
-            "id": f"sale-{uuid.uuid4().hex[:12]}",
-            "invoiceNo": f"TRX-{seq}",
-            "createdAt": now_iso,
-            "items": items,
-            "subtotalPaise": subtotal,
-            "discountSavedPaise": max(0, subtotal - total),
-            "totalPaise": total,
-            "paymentMethod": payload["paymentMethod"],
-            "customerId": customer_id,
-            "customerName": customer_name,
-            "rescuedDeadStockPaise": rescued,
-            "upiTransactionRef": upi_ref,
-            "upiUtrNumber": (payload.get("upiUtrNumber") or "").strip() or None,
-            "upiIdUsed": (payload.get("upiIdUsed") or "").strip() or None,
-            "paymentStatus": payload.get("paymentStatus") or "confirmed",
-            "isDemoPayment": payload.get("isDemoPayment", payload["paymentMethod"] == "upi"),
-        }
-        self.db.put("sales", sale["id"], sale, now_iso)
-        self.db.set_meta("invoice_seq", str(seq + 1))
-        return sale
+            if upi_ref:
+                confirmed.append(upi_ref)
+                conn.execute(
+                    "INSERT INTO meta(key, value) VALUES ('confirmed_refs', ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                    (json.dumps(confirmed),),
+                )
+            return sale
 
     def _add_history(self, product: dict, qty: int, price: float, when: dt.datetime) -> None:
         self.db.add_history_rows(

@@ -58,10 +58,11 @@ The backend needs the ML artifacts. If `models/`, `data/ml/` or `reports/` are a
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `TREXO_OWNER_PASSCODE` | `123456789` | Owner login passcode. **Change before any shared use.** |
+| `TREXO_OWNER_PASSCODE_HASH` | none | Preferred PBKDF2-SHA256 owner passcode hash. Configure before starting the backend. |
+| `TREXO_OWNER_PASSCODE` | none | Legacy plaintext environment setting; avoid for deployments. |
 | `TREXO_AUTH_SECRET` | generated into `backend/data/.auth_secret` | HMAC signing secret. Set explicitly for reproducible deployments. |
 | `TREXO_TOKEN_TTL_SECONDS` | `43200` (12 h) | Bearer token lifetime |
-| `TREXO_ADMIN_TOKEN` | unset | Enables `POST /models/{kind}/activate`. Unset = disabled. |
+| `TREXO_ADMIN_TOKEN` | unset | Enables administrative operations, including model activation and demo reset. Unset = disabled. |
 | `TREXO_CORS_ORIGINS` | localhost:3000/5173 | Comma-separated allowed browser origins |
 | `TREXO_DATA_DIR` | `backend/data` | SQLite and secret location |
 | `TREXO_DB_PATH` | `backend/data/trexo.db` | Explicit database path |
@@ -77,11 +78,13 @@ Frontend (`frontend/.env.local`):
 Example backend launch with explicit secrets:
 
 ```powershell
-$env:TREXO_OWNER_PASSCODE = "<strong-passcode>"
+$env:TREXO_OWNER_PASSCODE_HASH = '<pbkdf2_sha256$iterations$salt$digest>'
 $env:TREXO_AUTH_SECRET   = "<random-64-char-secret>"
 $env:TREXO_ADMIN_TOKEN   = "<random-admin-token>"
 ..\.venv\Scripts\python.exe -m uvicorn trexo_api.main:app --app-dir backend --host 127.0.0.1 --port 8000
 ```
+
+The backend reads these settings from its process environment at startup; it does not load a backend `.env` file. Do not put plaintext passcodes or hashes in tracked files.
 
 Verify:
 
@@ -128,7 +131,7 @@ Offline demo (mock services, no backend):
 npm run dev
 ```
 
-The mock mode uses the prototype passcode `123456789` and an in-browser store. It is intentionally **not** secure and should not be used for real data.
+Mock mode uses an in-browser store and does not authenticate passwords. Use API mode with an explicitly configured backend passcode for store login; mock mode is not suitable for real data.
 
 ### Production build
 

@@ -1,4 +1,5 @@
 import sys
+import os
 from pathlib import Path
 
 import pytest
@@ -7,6 +8,10 @@ from fastapi.testclient import TestClient
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
+
+os.environ.setdefault("TREXO_OWNER_PASSCODE", "phase-b-test-owner")
+os.environ.pop("TREXO_OWNER_PASSCODE_HASH", None)
+os.environ.setdefault("TREXO_ADMIN_TOKEN", "phase-b-test-admin")
 
 from trexo_api.main import create_app  # noqa: E402
 
@@ -21,7 +26,7 @@ def client(tmp_path_factory):
 
 @pytest.fixture(scope="session")
 def auth(client):
-    resp = client.post("/api/v1/auth/login", json={"password": "123456789"})
+    resp = client.post("/api/v1/auth/login", json={"password": "phase-b-test-owner"})
     assert resp.status_code == 200
     return {"Authorization": f"Bearer {resp.json()['token']}"}
 

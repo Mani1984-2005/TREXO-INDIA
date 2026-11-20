@@ -43,6 +43,8 @@ class StoreDB:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connection() as conn:
+            conn.execute("PRAGMA journal_mode = WAL")
+            conn.execute("PRAGMA busy_timeout = 15000")
             conn.executescript(_SCHEMA)
 
     @contextmanager
@@ -51,6 +53,23 @@ class StoreDB:
             conn = sqlite3.connect(self.path, timeout=15)
             conn.row_factory = sqlite3.Row
             try:
+                yield conn
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
+
+    @contextmanager
+    def transaction(self) -> Iterator[sqlite3.Connection]:
+        """An explicit write transaction spanning a complete business operation."""
+        with _lock:
+            conn = sqlite3.connect(self.path, timeout=15)
+            conn.row_factory = sqlite3.Row
+            try:
+                conn.execute("PRAGMA busy_timeout = 15000")
+                conn.execute("BEGIN IMMEDIATE")
                 yield conn
                 conn.commit()
             except Exception:

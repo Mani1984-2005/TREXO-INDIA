@@ -47,6 +47,7 @@ interface TranslationDict {
   loginPrivateNote: string;
   loginEmptyError: string;
   loginInvalidError: string;
+  loginNetworkError: string;
 }
 
 export const TRANSLATIONS: Record<LanguageCode, TranslationDict> = {
@@ -99,6 +100,7 @@ export const TRANSLATIONS: Record<LanguageCode, TranslationDict> = {
     loginPrivateNote: 'Private access for authorized store owner.',
     loginEmptyError: 'Please enter your store password to continue.',
     loginInvalidError: 'Incorrect store password. Please check and try again.',
+    loginNetworkError: 'Could not reach the store sign-in service. Check the connection and try again.',
   },
   hi: {
     navDashboard: 'डैशबोर्ड',
@@ -148,6 +150,7 @@ export const TRANSLATIONS: Record<LanguageCode, TranslationDict> = {
     loginPrivateNote: 'केवल अधिकृत स्टोर मालिक के लिए निजी पहुँच।',
     loginEmptyError: 'कृपया जारी रखने के लिए अपना स्टोर पासवर्ड दर्ज करें।',
     loginInvalidError: 'गलत स्टोर पासवर्ड। कृपया जाँच कर पुनः प्रयास करें।',
+    loginNetworkError: 'स्टोर साइन-इन सेवा से संपर्क नहीं हो पाया। कनेक्शन जाँचकर फिर प्रयास करें।',
   },
   kn: {
     navDashboard: 'ಡ್ಯಾಶ್‌ಬೋರ್ಡ್',
@@ -197,5 +200,6 @@ export const TRANSLATIONS: Record<LanguageCode, TranslationDict> = {
     loginPrivateNote: 'ಅಧಿಕೃತ ಅಂಗಡಿ ಮಾಲೀಕರಿಗೆ ಮಾತ್ರ ಖಾಸಗಿ ಪ್ರವೇಶ.',
     loginEmptyError: 'ಮುಂದುವರಿಯಲು ದಯವಿಟ್ಟು ನಿಮ್ಮ ಅಂಗಡಿ ಪಾಸ್‌ವರ್ಡ್ ನಮೂದಿಸಿ.',
     loginInvalidError: 'ತಪ್ಪಾದ ಅಂಗಡಿ ಪಾಸ್‌ವರ್ಡ್. ದಯವಿಟ್ಟು ಪರಿಶೀಲಿಸಿ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.',
+    loginNetworkError: 'ಅಂಗಡಿ ಸೈನ್-ಇನ್ ಸೇವೆಯನ್ನು ಸಂಪರ್ಕಿಸಲಾಗಲಿಲ್ಲ. ಸಂಪರ್ಕ ಪರಿಶೀಲಿಸಿ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.',
   },
 };
